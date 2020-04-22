@@ -76,7 +76,8 @@ enum ControlType : uint8_t {
   UpdateGauge,
   UpdateAccel,
 
-  InitialGui = 200
+  InitialGui = 200,
+  BatchUpdate = 201
 };
 
 #define UI_INITIAL_GUI ControlType::InitialGui
@@ -122,6 +123,7 @@ public:
   ControlColor color;
   uint16_t parentControl;
   Control *next;
+  bool dirty = false;
 
   static constexpr uint16_t noParent = 0xffff;
 
@@ -217,6 +219,10 @@ public:
 
   void updateControl(uint16_t id, int clientId = -1);
   void updateControl(Control *control, int clientId = -1);
+
+  void updateControlAsync( Control* control );
+  void updateControlAsync( uint16_t id );
+  void updateControlAsyncTransmit( int clientId = -1 );
 
   void print(uint16_t id, String value);
   void updateLabel(uint16_t id, String value);

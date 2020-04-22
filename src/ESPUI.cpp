@@ -474,6 +474,90 @@ Control *ESPUIClass::getControl(uint16_t id) {
   return nullptr;
 }
 
+void ESPUIClass::updateControlAsyncTransmit( int clientId ) {
+  Control* control = this->controls;
+
+  // DynamicJsonBuffer jsonBuffer;
+  // JsonObject root = jsonBuffer.createObject();
+  // root["t"] = ( int )ControlType::BatchUpdate;
+  // JsonArray& items = jsonBuffer.createArray();
+
+  String json;
+  DynamicJsonDocument document(jsonUpdateDocumentSize);
+  JsonObject root = document.to<JsonObject>();
+  root["t"] = ( int )ControlType::BatchUpdate;
+  DynamicJsonDocument itemsarray(jsonUpdateDocumentSize);
+  JsonArray items = itemsarray.to<JsonArray>();
+
+  while( control != nullptr ) {
+    if( control->dirty ) {
+      //JsonObject item = jsonBuffer.createObject();
+      String json;
+      DynamicJsonDocument document(jsonUpdateDocumentSize);
+      JsonObject item = document.to<JsonObject>();
+
+      item["t"] = ( int )control->type + ControlType::UpdateOffset;
+      item["v"] = control->value;
+      item["id"] = control->id;
+      item["c"] = ( int )control->color;
+      serializeJson(document, json);
+
+      items.add( item );
+
+      control->dirty = false;
+    }
+
+    control = control->next;
+  serializeJson(itemsarray, json);
+  }
+
+  // Send as one big bunch
+  root["controls"] = items;
+  serializeJson(document, json);
+
+  size_t len = root.size();
+  try {
+    char* buffer = new char[ len + 1 ];
+
+    // root.printTo( ( char* )buffer, len + 1 ); // Json 5
+    serializeJson( root, ( char* )buffer, len + 1 );
+    // jsonBuffer.clear();
+
+    if( clientId > 0 ) {
+      // This is a hacky workaround because ESPAsyncWebServer does not have a function
+      // like this and it's clients array is private
+      int tryId = 0;
+
+      for( int count = 0; count < this->ws->count(); ) {
+        if( this->ws->hasClient( tryId ) ) {
+          if( clientId != tryId ) {
+            this->ws->client( tryId )->text( buffer );
+
+            if( this->verbosity >= Verbosity::VerboseJSON ) {
+              Serial.println( buffer );
+            }
+          }
+
+          count++;
+        }
+
+        tryId++;
+      }
+    } else {
+      if( this->verbosity >= Verbosity::VerboseJSON ) {
+        Serial.println( buffer );
+      }
+
+      this->ws->textAll( buffer );
+    }
+
+    delete buffer;
+  } catch( const std::bad_alloc& e ) {
+    Serial.print( "EXCEPTION: Allocation failed: " );
+    Serial.println( e.what() );
+  }
+}
+
 void ESPUIClass::updateControl(Control *control, int clientId) {
   if (!control) {
     return;
@@ -551,6 +635,17 @@ void ESPUIClass::updateControlValue(uint16_t id, String value, int clientId) {
   }
 
   updateControlValue(control, value, clientId);
+}
+
+void ESPUIClass::updateControlAsync( Control* control ) {
+  if( control ) {
+    control->dirty = true;
+  }
+}
+
+void ESPUIClass::updateControlAsync( uint16_t id ) {
+  Control* control = getControl( id );
+  updateControlAsync( control );
 }
 
 void ESPUIClass::print(uint16_t id, String value) { updateControlValue(id, value); }
